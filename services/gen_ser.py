@@ -7,11 +7,11 @@ from cassandra.cluster import Cluster, ExecutionProfile, EXEC_PROFILE_DEFAULT
 app = Flask(__name__)
 index_queue = queue.Queue()
 completed_ranges = set()
-characters = 'abcdefghijklmnopqrstuvwxyz'
-min_length = 1
-max_length = 4
-batch_size = 2500
-max_records = sum(len(characters) ** length for length in range(min_length, max_length + 1)) - 1
+CHARACTERS = 'abcdefghijklmnopqrstuvwxyz'
+MIN_LENGTH = 1
+MAX_LENGTH = 4
+BATCH_SIZE = 2500
+MAX_RECORDS = sum(len(CHARACTERS) ** length for length in range(MIN_LENGTH, MAX_LENGTH + 1)) - 1
 
 execution_profile = ExecutionProfile(request_timeout=600)
 cluster = Cluster(['10.16.16.22'], execution_profiles={EXEC_PROFILE_DEFAULT: execution_profile})
@@ -27,18 +27,18 @@ def get_partition_id(sha256_hash):
     return int(sha256_hash[-4:], 16)
 
 
-def get_password_by_index(index, characters, min_length, max_length):
+def get_password_by_index(index, CHARACTERS, MIN_LENGTH, MAX_LENGTH):
     password = ""
     current_index = 0
 
-    for length in range(min_length, max_length + 1):
-        num_combinations = len(characters) ** length
+    for length in range(MIN_LENGTH, MAX_LENGTH + 1):
+        num_combinations = len(CHARACTERS) ** length
 
         if current_index + num_combinations > index:
             remaining_index = index - current_index
             for _ in range(length):
-                password += characters[remaining_index % len(characters)]
-                remaining_index //= len(characters)
+                password += CHARACTERS[remaining_index % len(CHARACTERS)]
+                remaining_index //= len(CHARACTERS)
             break
         else:
             current_index += num_combinations
@@ -49,7 +49,7 @@ def get_password_by_index(index, characters, min_length, max_length):
 def check_last_record(index):
     measure_exec_time = True
 
-    password = get_password_by_index(index, characters, min_length, max_length)
+    password = get_password_by_index(index, CHARACTERS, MIN_LENGTH, MAX_LENGTH)
     sha256_hash = hashlib.sha256(password.encode()).hexdigest()
     partition_id = get_partition_id(sha256_hash)
     print(f"password: {password}, partition_id:{partition_id}, hash:{sha256_hash}, password_id:{index}")
@@ -66,30 +66,33 @@ def check_last_record(index):
 
 
 def run_server():
-    app.run(host='10.16.16.22', port=5000)
+    app.run(host='10.16.16.22', port=5000, use_reloader=False)
 
 
 @app.route('/get_range', methods=['GET'])
 def get_range():
-    if index_queue.empty() and len(completed_ranges) == max_records // batch_size + 1:
+    if index_queue.empty() and len(completed_ranges) == MAX_RECORDS // BATCH_SIZE + 1:
         return jsonify({'status': 'finished'})
 
     if request.method == 'GET':
         if not index_queue.empty():
             start_index = index_queue.get()
+        elif get_max_index() == MAX_RECORDS:
+            print("Генерация окончена")
+            return jsonify({'status': 'finished'})
         else:
             last_index = get_max_index()
-            start_index = (last_index // batch_size + 1) * batch_size
+            start_index = (last_index // gen_records_count + 1) * gen_records_count
 
-        end_index = min(start_index + batch_size - 1, max_records)
+        end_index = min(start_index + BATCH_SIZE - 1, MAX_RECORDS)
 
         response_data = {
             'start_index': start_index,
             'end_index': end_index,
-            'characters': characters,
-            'min_length': min_length,
-            'max_length': max_length,
-            'batch_size': batch_size
+            'CHARACTERS': CHARACTERS,
+            'MIN_LENGTH': MIN_LENGTH,
+            'MAX_LENGTH': MAX_LENGTH,
+            'BATCH_SIZE': BATCH_SIZE
         }
 
         return jsonify(response_data)
@@ -109,12 +112,19 @@ def check_last_record_route():
     data = request.json
     index_to_check = data['last_index']
     if check_last_record(index_to_check):
-        count = get_max_index()
-        success = check_last_record(count)
-        if success:
-            return jsonify({'status': 'success'})
-        else:
-            return jsonify({'status': 'error'})
+        return jsonify({'status': 'success'})
+    else:
+        return jsonify({'status': 'error'})
+
+
+@app.route('/mission accomplished', methods=['POST'])
+def shutdown_server():
+    data = request.json
+    bay = data['mission accomplished']
+    if bay:
+        print("Shutting down server...")
+        os.kill(os.getpid(), signal.SIGINT)
+        return jsonify({'status': 'success'})
     else:
         return jsonify({'status': 'error'})
 
@@ -126,22 +136,25 @@ def main():
 
     if count == 0:
         print("Таблица пуста. Запускаем новый генератор...")
-        index_queue = queue.Queue(maxsize=max_records // batch_size + 1)
-        for i in range(0, max_records + 1, batch_size):
+        index_queue = queue.Queue(maxsize=MAX_RECORDS // gen_records_count + 1)
+        for i in range(0, MAX_RECORDS + 1, gen_records_count):
             index_queue.put(i)
-        app.run(host='10.16.16.22', port=5000)
+        app.run()
     else:
-        if count == max_records:
+        if count == MAX_RECORDS:
             print(f"Таблица содержит {count} записей.\n""Максимальное количество записей для данной генерации достигнуто. Измените параметры для начала новой генерации.")
             if check_last_record(count):
                 print("Последняя запись успешно проверена.")
             else:
                 print("Ошибка при проверке последней записи.")
-        elif count > max_records:
-            print(f"Таблица содержит {count} записей вместо {max_records}, порядок генерации нарушен")
+        elif count > MAX_RECORDS:
+            print(f"Таблица содержит {count} записей вместо {MAX_RECORDS}, порядок генерации нарушен")
         else:
             print(f"Таблица содержит {count} записей. Восстанавливаем генератор...")
-            app.run(host='10.16.16.22', port=5000)
+            index_queue = queue.Queue(maxsize=MAX_RECORDS // gen_records_count + 1)
+            for i in range(count, MAX_RECORDS + 1, gen_records_count):
+                index_queue.put(i)
+            app.run()
 
 
     end_time = time()

@@ -10,18 +10,18 @@ session = cluster.connect('hashes')
 SERVER_URL = 'http://10.16.16.22:5000'
 
 
-def get_password_by_index(index, characters, min_length, max_length):
+def get_password_by_index(index, CHARACTERS, MIN_LENGTH, MAX_LENGTH):
     password = ""
     current_index = 0
 
-    for length in range(min_length, max_length + 1):
-        num_combinations = len(characters) ** length
+    for length in range(MIN_LENGTH, MAX_LENGTH + 1):
+        num_combinations = len(CHARACTERS) ** length
 
         if current_index + num_combinations > index:
             remaining_index = index - current_index
             for _ in range(length):
-                password += characters[remaining_index % len(characters)]
-                remaining_index //= len(characters)
+                password += CHARACTERS[remaining_index % len(CHARACTERS)]
+                remaining_index //= len(CHARACTERS)
             break
         else:
             current_index += num_combinations
@@ -29,18 +29,18 @@ def get_password_by_index(index, characters, min_length, max_length):
     return password[::-1]
 
 
-def get_indices_by_index(index, characters, min_length, max_length):
+def get_indices_by_index(index, CHARACTERS, MIN_LENGTH, MAX_LENGTH):
     indices = []
     current_index = 0
 
-    for length in range(min_length, max_length + 1):
-        num_combinations = len(characters) ** length
+    for length in range(MIN_LENGTH, MAX_LENGTH + 1):
+        num_combinations = len(CHARACTERS) ** length
 
         if current_index + num_combinations > index:
             remaining_index = index - current_index
             for _ in range(length):
-                indices.append(remaining_index % len(characters))
-                remaining_index //= len(characters)
+                indices.append(remaining_index % len(CHARACTERS))
+                remaining_index //= len(CHARACTERS)
             break
         else:
             current_index += num_combinations
@@ -48,30 +48,30 @@ def get_indices_by_index(index, characters, min_length, max_length):
     return indices[::-1]
 
 
-def generator(characters, min_length, max_length, start_index=0, end_index=0):
-    def generate_combinations(characters, min_length, max_length, start_index, end_index):
+def generator(CHARACTERS, MIN_LENGTH, MAX_LENGTH, start_index=0, end_index=0):
+    def generate_combinations(CHARACTERS, MIN_LENGTH, MAX_LENGTH, start_index, end_index):
         index = start_index
         indices = []
         if start_index > 0:
-            indices2 = get_indices_by_index(index, characters, min_length, max_length)
-            last_combination = get_password_by_index(index, characters, min_length, max_length)
+            indices2 = get_indices_by_index(index, CHARACTERS, MIN_LENGTH, MAX_LENGTH)
+            last_combination = get_password_by_index(index, CHARACTERS, MIN_LENGTH, MAX_LENGTH)
             if last_combination:
                 length = len(last_combination)
                 indices = [0] * length
                 for i in range(length):
-                    indices[i] = characters.index(last_combination[i])
+                    indices[i] = CHARACTERS.index(last_combination[i])
         else:
-            indices = [0] * min_length
+            indices = [0] * MIN_LENGTH
 
-        for length in range(len(indices), max_length + 1):
+        for length in range(len(indices), MAX_LENGTH + 1):
             while end_index == 0 or index <= end_index:
-                combination = ''.join(characters[i] for i in indices)
+                combination = ''.join(CHARACTERS[i] for i in indices)
                 yield f"{index:08d}:{combination}"
                 index += 1
                 i = length - 1
                 while i >= 0:
                     indices[i] += 1
-                    if indices[i] < len(characters):
+                    if indices[i] < len(CHARACTERS):
                         break
                     indices[i] = 0
                     i -= 1
@@ -79,9 +79,9 @@ def generator(characters, min_length, max_length, start_index=0, end_index=0):
                     indices.append(0)
                     break
 
-    return generate_combinations(characters, min_length, max_length, start_index, end_index)
+    return generate_combinations(CHARACTERS, MIN_LENGTH, MAX_LENGTH, start_index, end_index)
 
-def hash_and_write_to_cassandra(strings, batch_size):
+def hash_and_write_to_cassandra(strings, BATCH_SIZE):
     printed = False
     batch_index = 0
     indexes_and_hashes = []
@@ -94,7 +94,7 @@ def hash_and_write_to_cassandra(strings, batch_size):
         password = ":".join(parts[1:])
         sha256_hash = hashlib.sha256(password.encode()).hexdigest()
         indexes_and_hashes.append((index, sha256_hash))
-        if batch_index == batch_size:
+        if batch_index == BATCH_SIZE:
             query = format_batch_insert_hash_query(indexes_and_hashes)
             session.execute(query, timeout=60)
             batch_index = 0
@@ -105,7 +105,7 @@ def hash_and_write_to_cassandra(strings, batch_size):
         query = format_batch_insert_hash_query(indexes_and_hashes)
         session.execute(query, timeout=60)
 
-    print(f"Записано {index} новых записей в базу данных.")
+    # print(f"Записано {index} новых записей в базу данных.")
 
 
 def format_batch_insert_hash_query(indexes_and_hashes):
@@ -137,47 +137,10 @@ def get_partition_id(sha256_hash):
     return int(sha256_hash[-4:], 16)
 
 
-def get_password_by_index(index, characters, min_length, max_length):
-    password = ""
-    current_index = 0
 
-    for length in range(min_length, max_length + 1):
-        num_combinations = len(characters) ** length
-
-        if current_index + num_combinations > index:
-            remaining_index = index - current_index
-            for _ in range(length):
-                password += characters[remaining_index % len(characters)]
-                remaining_index //= len(characters)
-            break
-        else:
-            current_index += num_combinations
-
-    return password[::-1]
-
-
-def get_indices_by_index(index, characters, min_length, max_length):
-    indices = []
-    current_index = 0
-
-    for length in range(min_length, max_length + 1):
-        num_combinations = len(characters) ** length
-
-        if current_index + num_combinations > index:
-            remaining_index = index - current_index
-            for _ in range(length):
-                indices.append(remaining_index % len(characters))
-                remaining_index //= len(characters)
-            break
-        else:
-            current_index += num_combinations
-
-    return indices[::-1]
-
-
-def client_process(characters, min_length, max_length, batch_size, start_index, end_index):
-    strings = generator(characters, min_length, max_length, start_index, end_index)
-    hash_and_write_to_cassandra(strings, batch_size)
+def client_process(CHARACTERS, MIN_LENGTH, MAX_LENGTH, BATCH_SIZE, start_index, end_index):
+    strings = generator(CHARACTERS, MIN_LENGTH, MAX_LENGTH, start_index, end_index)
+    hash_and_write_to_cassandra(strings, BATCH_SIZE)
     requests.post(f'{SERVER_URL}/report_completion', json={'start_index': start_index, 'end_index': end_index})
 
 
@@ -191,21 +154,24 @@ def get_range_info():
 
 
 def run_client():
+    register_client()
     while True:
         range_info = get_range_info()
         if range_info.get('status') == 'finished':
-            print("Генерация завершена. Выполняем запрос на сервер для проверки последней записи.")
-            signal_last_generation_completion()
+            # print("Генерация завершена. Выполняем запрос на сервер для проверки последней записи.")
+            signal_last_generation_completion(end_index)
+            if signal_last_generation_completion(end_index):
+                mission_accomplished()
             break
 
-        characters = range_info.get('characters', '')
-        min_length = range_info.get('min_length')
-        max_length = range_info.get('max_length')
-        batch_size = range_info.get('batch_size')
+        CHARACTERS = range_info.get('CHARACTERS', '')
+        MIN_LENGTH = range_info.get('MIN_LENGTH')
+        MAX_LENGTH = range_info.get('MAX_LENGTH')
+        BATCH_SIZE = range_info.get('BATCH_SIZE')
         start_index = range_info.get('start_index', 0)
         end_index = range_info.get('end_index', 0)
 
-        client_process(characters, min_length, max_length, batch_size, start_index, end_index)
+        client_process(CHARACTERS, MIN_LENGTH, MAX_LENGTH, BATCH_SIZE, start_index, end_index)
         report_completion(start_index, end_index)
 
 
@@ -213,23 +179,35 @@ def report_completion(start_index, end_index):
     try:
         data = {'start_index': start_index, 'end_index': end_index}
         response = requests.post('http://10.16.16.22:5000/report_completion', json=data)
-        if response.json().get('status') == 'success':
-            print(f"Отчет о завершении работы с диапазоном {start_index}-{end_index} отправлен.")
-        else:
+        if not response.json().get('status') == 'success':
+            # print(f"Отчет о завершении работы с диапазоном {start_index}-{end_index} отправлен.")
             print(f"Ошибка при отправке отчета о завершении работы с диапазоном {start_index}-{end_index}.")
     except Exception as e:
         print(f"Ошибка при отправке отчета о завершении работы: {e}")
 
 
-def signal_last_generation_completion():
+def signal_last_generation_completion(end_index):
     try:
-        response = requests.post('http://10.16.16.22:5000/check_last_record')
+        data = {'last_index': end_index}
+        response = requests.post('http://10.16.16.22:5000/check_last_record', json=data)
         if response.status_code == 200 and response.json().get('status') == 'success':
-            print("Проверка последней записи успешно завершена. Сигнал серверу отправлен.")
+            print("Проверка последней записи успешно завершена.")
         else:
-            print("Ошибка при проверке последней записи. Сигнал серверу не отправлен.")
+            print("Ошибка при проверке последней записи.")
     except Exception as e:
         print(f"Ошибка при отправке сигнала последней генерации: {e}")
+
+
+def mission_accomplished():
+    try:
+        data = {'mission accomplished'}
+        response = requests.post('http://10.16.16.22:5000/mission accomplished', json=data)
+        if response.status_code == 200 and response.json().get('status') == 'success':
+            print("Сервер окончил работу")
+        else:
+            print("Ошибка при завершении работы сервера.")
+    except Exception as e:
+        print(f"Ошибка при отправке сигнала отключения сервера: {e}")
 
 
 def register_client():
