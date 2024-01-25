@@ -158,7 +158,7 @@ def run_client():
     while True:
         range_info = get_range_info()
         if range_info.get('status') == 'finished':
-            # print("Генерация завершена. Выполняем запрос на сервер для проверки последней записи.")
+            print("Генерация завершена. Выполняем запрос на сервер для проверки последней записи.")
             signal_last_generation_completion(end_index)
             if signal_last_generation_completion(end_index):
                 mission_accomplished()
