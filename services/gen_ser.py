@@ -12,6 +12,7 @@ MIN_LENGTH = 1
 MAX_LENGTH = 4
 BATCH_SIZE = 2500
 MAX_RECORDS = sum(len(CHARACTERS) ** length for length in range(MIN_LENGTH, MAX_LENGTH + 1)) - 1
+RECORDS_COUNT = 10000
 
 execution_profile = ExecutionProfile(request_timeout=600)
 cluster = Cluster(['10.16.16.22'], execution_profiles={EXEC_PROFILE_DEFAULT: execution_profile})
@@ -82,7 +83,7 @@ def get_range():
             return jsonify({'status': 'finished'})
         else:
             last_index = get_max_index()
-            start_index = (last_index // gen_records_count + 1) * gen_records_count
+            start_index = (last_index // RECORDS_COUNT + 1) * RECORDS_COUNT
 
         end_index = min(start_index + BATCH_SIZE - 1, MAX_RECORDS)
 
@@ -136,8 +137,8 @@ def main():
 
     if count == 0:
         print("Таблица пуста. Запускаем новый генератор...")
-        index_queue = queue.Queue(maxsize=MAX_RECORDS // gen_records_count + 1)
-        for i in range(0, MAX_RECORDS + 1, gen_records_count):
+        index_queue = queue.Queue(maxsize=MAX_RECORDS // RECORDS_COUNT + 1)
+        for i in range(0, MAX_RECORDS + 1, RECORDS_COUNT):
             index_queue.put(i)
         app.run()
     else:
@@ -151,8 +152,8 @@ def main():
             print(f"Таблица содержит {count} записей вместо {MAX_RECORDS}, порядок генерации нарушен")
         else:
             print(f"Таблица содержит {count} записей. Восстанавливаем генератор...")
-            index_queue = queue.Queue(maxsize=MAX_RECORDS // gen_records_count + 1)
-            for i in range(count, MAX_RECORDS + 1, gen_records_count):
+            index_queue = queue.Queue(maxsize=MAX_RECORDS // RECORDS_COUNT + 1)
+            for i in range(count, MAX_RECORDS + 1, RECORDS_COUNT):
                 index_queue.put(i)
             app.run()
 
