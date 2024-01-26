@@ -2,6 +2,8 @@ from flask import Flask, jsonify, request
 import queue
 from time import time
 import hashlib
+import os
+import signal
 from cassandra.cluster import Cluster, ExecutionProfile, EXEC_PROFILE_DEFAULT
 
 app = Flask(__name__)
