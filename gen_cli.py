@@ -154,20 +154,18 @@ def get_range_info():
 
 
 def run_client():
-    register_client()
+    # register_client()
     while True:
         range_info = get_range_info()
         if range_info.get('status') == 'finished':
             print("Генерация завершена. Выполняем запрос на сервер для проверки последней записи.")
-            signal_last_generation_completion(end_index)
             if signal_last_generation_completion(end_index):
-                mission_accomplished()
-            break
+                break
 
-        CHARACTERS = range_info.get('CHARACTERS', '')
-        MIN_LENGTH = range_info.get('MIN_LENGTH')
-        MAX_LENGTH = range_info.get('MAX_LENGTH')
-        BATCH_SIZE = range_info.get('BATCH_SIZE')
+        CHARACTERS = range_info.get('characters', '')
+        MIN_LENGTH = range_info.get('min_length')
+        MAX_LENGTH = range_info.get('max_length')
+        BATCH_SIZE = range_info.get('batch_size')
         start_index = range_info.get('start_index', 0)
         end_index = range_info.get('end_index', 0)
 
@@ -196,18 +194,6 @@ def signal_last_generation_completion(end_index):
             print("Ошибка при проверке последней записи.")
     except Exception as e:
         print(f"Ошибка при отправке сигнала последней генерации: {e}")
-
-
-def mission_accomplished():
-    try:
-        data = {'mission accomplished'}
-        response = requests.post('http://10.16.16.22:5000/mission accomplished', json=data)
-        if response.status_code == 200 and response.json().get('status') == 'success':
-            print("Сервер окончил работу")
-        else:
-            print("Ошибка при завершении работы сервера.")
-    except Exception as e:
-        print(f"Ошибка при отправке сигнала отключения сервера: {e}")
 
 
 def register_client():
