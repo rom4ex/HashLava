@@ -2,6 +2,8 @@ from flask import Flask, jsonify, request
 import queue
 from time import time
 import hashlib
+import os
+import signal
 from cassandra.cluster import Cluster, ExecutionProfile, EXEC_PROFILE_DEFAULT
 
 app = Flask(__name__)
@@ -12,6 +14,7 @@ MIN_LENGTH = 1
 MAX_LENGTH = 4
 BATCH_SIZE = 2500
 MAX_RECORDS = sum(len(CHARACTERS) ** length for length in range(MIN_LENGTH, MAX_LENGTH + 1)) - 1
+RECORDS_COUNT = 10000
 
 execution_profile = ExecutionProfile(request_timeout=600)
 cluster = Cluster(['10.16.16.22'], execution_profiles={EXEC_PROFILE_DEFAULT: execution_profile})
@@ -65,13 +68,14 @@ def check_last_record(index):
     return result.password_id == index and result.hash_text == sha256_hash if result else False
 
 
+
 def run_server():
     app.run(host='10.16.16.22', port=5000, use_reloader=False)
 
 
 @app.route('/get_range', methods=['GET'])
 def get_range():
-    if index_queue.empty() and len(completed_ranges) == MAX_RECORDS // BATCH_SIZE + 1:
+    if index_queue.empty() and len(completed_ranges) == MAX_RECORDS // RECORDS_COUNT + 1:
         return jsonify({'status': 'finished'})
 
     if request.method == 'GET':
@@ -81,18 +85,17 @@ def get_range():
             print("Генерация окончена")
             return jsonify({'status': 'finished'})
         else:
-            last_index = get_max_index()
-            start_index = (last_index // gen_records_count + 1) * gen_records_count
+            start_index = get_max_index()+1
 
-        end_index = min(start_index + BATCH_SIZE - 1, MAX_RECORDS)
+        end_index = min(start_index + RECORDS_COUNT - 1, MAX_RECORDS)
 
         response_data = {
             'start_index': start_index,
             'end_index': end_index,
-            'CHARACTERS': CHARACTERS,
-            'MIN_LENGTH': MIN_LENGTH,
-            'MAX_LENGTH': MAX_LENGTH,
-            'BATCH_SIZE': BATCH_SIZE
+            'characters': CHARACTERS,
+            'min_length': MIN_LENGTH,
+            'max_length': MAX_LENGTH,
+            'batch_size': BATCH_SIZE
         }
 
         return jsonify(response_data)
@@ -111,22 +114,21 @@ def report_completion():
 def check_last_record_route():
     data = request.json
     index_to_check = data['last_index']
-    if check_last_record(index_to_check):
-        return jsonify({'status': 'success'})
-    else:
+    if index_to_check != MAX_RECORDS:
+        print("Генерация завершилась, но последний индекс не соответствует предполагаемому максимальному значению")
         return jsonify({'status': 'error'})
+    else:
+        if check_last_record(index_to_check):
+            return jsonify({'status': 'success'})
+        else:
+            return jsonify({'status': 'error'})
 
 
-@app.route('/mission accomplished', methods=['POST'])
+
 def shutdown_server():
-    data = request.json
-    bay = data['mission accomplished']
-    if bay:
-        print("Shutting down server...")
-        os.kill(os.getpid(), signal.SIGINT)
-        return jsonify({'status': 'success'})
-    else:
-        return jsonify({'status': 'error'})
+    print("Shutting down server...")
+    os.kill(os.getpid(), signal.SIGINT)
+
 
 
 def main():
@@ -136,10 +138,10 @@ def main():
 
     if count == 0:
         print("Таблица пуста. Запускаем новый генератор...")
-        index_queue = queue.Queue(maxsize=MAX_RECORDS // gen_records_count + 1)
-        for i in range(0, MAX_RECORDS + 1, gen_records_count):
+        index_queue = queue.Queue(maxsize=MAX_RECORDS // RECORDS_COUNT + 1)
+        for i in range(0, MAX_RECORDS + 1, RECORDS_COUNT):
             index_queue.put(i)
-        app.run()
+        run_server()
     else:
         if count == MAX_RECORDS:
             print(f"Таблица содержит {count} записей.\n""Максимальное количество записей для данной генерации достигнуто. Измените параметры для начала новой генерации.")
@@ -151,10 +153,10 @@ def main():
             print(f"Таблица содержит {count} записей вместо {MAX_RECORDS}, порядок генерации нарушен")
         else:
             print(f"Таблица содержит {count} записей. Восстанавливаем генератор...")
-            index_queue = queue.Queue(maxsize=MAX_RECORDS // gen_records_count + 1)
-            for i in range(count, MAX_RECORDS + 1, gen_records_count):
+            index_queue = queue.Queue(maxsize=MAX_RECORDS // RECORDS_COUNT + 1)
+            for i in range(count, MAX_RECORDS + 1, RECORDS_COUNT):
                 index_queue.put(i)
-            app.run()
+            run_server()
 
 
     end_time = time()
