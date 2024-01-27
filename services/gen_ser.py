@@ -85,7 +85,7 @@ def get_range():
             print("Генерация окончена")
             return jsonify({'status': 'finished'})
         else:
-            start_index = get_max_index()
+            start_index = get_max_index()+1
 
         end_index = min(start_index + RECORDS_COUNT - 1, MAX_RECORDS)
 
@@ -122,14 +122,12 @@ def check_last_record_route():
             return jsonify({'status': 'success'})
         else:
             return jsonify({'status': 'error'})
-    shutdown_server()
 
 
 
 def shutdown_server():
-    if True:
-        print("Shutting down server...")
-        os.kill(os.getpid(), signal.SIGINT)
+    print("Shutting down server...")
+    os.kill(os.getpid(), signal.SIGINT)
 
 
 
