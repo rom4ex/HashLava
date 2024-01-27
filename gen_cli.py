@@ -1,6 +1,5 @@
 import requests
 import hashlib
-import queue
 from cassandra.cluster import Cluster, ExecutionProfile, EXEC_PROFILE_DEFAULT
 
 execution_profile = ExecutionProfile(request_timeout=600)
