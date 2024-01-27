@@ -20,6 +20,8 @@ execution_profile = ExecutionProfile(request_timeout=600)
 cluster = Cluster(['10.16.16.22'], execution_profiles={EXEC_PROFILE_DEFAULT: execution_profile})
 session = cluster.connect('hashes')
 
+shutdown = False
+
 
 def get_max_index():
     result = session.execute("SELECT hwm FROM metadata WHERE id = 1;").one()
@@ -59,14 +61,14 @@ def check_last_record(index):
 
     db_query_exec_time_start = time()
 
-    result = session.execute(f"SELECT * FROM hash WHERE partition_id = {partition_id} AND hash_text = '{sha256_hash}';").one()
+    result = session.execute(
+        f"SELECT * FROM hash WHERE partition_id = {partition_id} AND hash_text = '{sha256_hash}';").one()
 
     if measure_exec_time:
         db_query_exec_duration = time() - db_query_exec_time_start
         print(f'DB query execution took {db_query_exec_duration:.3} seconds')
 
     return result.password_id == index and result.hash_text == sha256_hash if result else False
-
 
 
 def run_server():
@@ -85,7 +87,7 @@ def get_range():
             print("Генерация окончена")
             return jsonify({'status': 'finished'})
         else:
-            start_index = get_max_index()+1
+            start_index = get_max_index() + 1
 
         end_index = min(start_index + RECORDS_COUNT - 1, MAX_RECORDS)
 
@@ -119,16 +121,19 @@ def check_last_record_route():
         return jsonify({'status': 'error'})
     else:
         if check_last_record(index_to_check):
+            global shutdown
+            shutdown = True
             return jsonify({'status': 'success'})
         else:
             return jsonify({'status': 'error'})
 
 
-
-def shutdown_server():
-    print("Shutting down server...")
-    os.kill(os.getpid(), signal.SIGINT)
-
+@app.teardown_request
+def shutdown_server(exception=None):
+    global shutdown
+    if shutdown:
+        print("Shutting down server...")
+        os.kill(os.getpid(), signal.SIGINT)
 
 
 def main():
@@ -144,7 +149,8 @@ def main():
         run_server()
     else:
         if count == MAX_RECORDS:
-            print(f"Таблица содержит {count} записей.\n""Максимальное количество записей для данной генерации достигнуто. Измените параметры для начала новой генерации.")
+            print(
+                f"Таблица содержит {count} записей.\n""Максимальное количество записей для данной генерации достигнуто. Измените параметры для начала новой генерации.")
             if check_last_record(count):
                 print("Последняя запись успешно проверена.")
             else:
@@ -157,7 +163,6 @@ def main():
             for i in range(count, MAX_RECORDS + 1, RECORDS_COUNT):
                 index_queue.put(i)
             run_server()
-
 
     end_time = time()
     result_time = end_time - start_time
