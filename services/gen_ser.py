@@ -16,6 +16,7 @@ BATCH_SIZE = 2500
 MAX_RECORDS = sum(len(CHARACTERS) ** length for length in range(MIN_LENGTH, MAX_LENGTH + 1)) - 1
 RECORDS_COUNT = 10000
 
+
 execution_profile = ExecutionProfile(request_timeout=600)
 cluster = Cluster(['10.16.16.22'], execution_profiles={EXEC_PROFILE_DEFAULT: execution_profile})
 session = cluster.connect('hashes')
@@ -30,6 +31,15 @@ def get_max_index():
 
 def get_partition_id(sha256_hash):
     return int(sha256_hash[-4:], 16)
+
+
+def format_insert_metadata_query(hwm_min):
+    try:
+        query = f"INSERT INTO metadata (id, hwm) VALUES (1, {hwm_min})"
+        session.execute(query)
+        return query
+    except Exception as e:
+        print(f"Ошибка при формировании запроса вставки в metadata: {e}")
 
 
 def get_password_by_index(index, CHARACTERS, MIN_LENGTH, MAX_LENGTH):
@@ -72,11 +82,23 @@ def check_last_record(index):
 
 
 def run_server():
-    app.run(host='10.16.16.22', port=5000, use_reloader=False)
+    app.run(host='10.16.25.100', port=5000, use_reloader=False)
 
 
 @app.route('/get_range', methods=['GET'])
 def get_range():
+    hwm_min = 0
+    if not index_queue.empty():
+        min_value = min(list(index_queue.queue))
+        if min_value:
+            hwm_min = min_value - 1
+            print(hwm_min)
+
+    else:
+         hwm_min = MAX_RECORDS
+         print(hwm_min)
+         print(get_max_index())
+
     if index_queue.empty() and len(completed_ranges) == MAX_RECORDS // RECORDS_COUNT + 1:
         return jsonify({'status': 'finished'})
 
@@ -87,7 +109,7 @@ def get_range():
             print("Генерация окончена")
             return jsonify({'status': 'finished'})
         else:
-            start_index = get_max_index() + 1
+            start_index = get_max_index()
 
         end_index = min(start_index + RECORDS_COUNT - 1, MAX_RECORDS)
 
@@ -97,7 +119,8 @@ def get_range():
             'characters': CHARACTERS,
             'min_length': MIN_LENGTH,
             'max_length': MAX_LENGTH,
-            'batch_size': BATCH_SIZE
+            'batch_size': BATCH_SIZE,
+            'hwm_min': hwm_min
         }
 
         return jsonify(response_data)
@@ -121,8 +144,10 @@ def check_last_record_route():
         return jsonify({'status': 'error'})
     else:
         if check_last_record(index_to_check):
-            global shutdown
-            shutdown = True
+            format_insert_metadata_query(hwm_min=MAX_RECORDS)
+            print(get_max_index())
+            # global shutdown
+            # shutdown = True
             return jsonify({'status': 'success'})
         else:
             return jsonify({'status': 'error'})
@@ -172,3 +197,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

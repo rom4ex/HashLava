@@ -112,12 +112,20 @@ def format_batch_insert_hash_query(indexes_and_hashes):
         insert_hash_queries = format_insert_hash_queries(indexes_and_hashes)
         query = f"""
         BEGIN BATCH 
-            {insert_hash_queries}
-            INSERT INTO metadata (id, hwm) VALUES (1, {indexes_and_hashes[-1][0]});
+            {insert_hash_queries}           
         APPLY BATCH;"""
         return query
     except Exception as e:
         print(f"Ошибка при получении информации о диапазоне: {e}")
+
+
+def format_insert_metadata_query(hwm_min):
+    try:
+        query = f"INSERT INTO metadata (id, hwm) VALUES (1, {hwm_min})"
+        session.execute(query)
+        return query
+    except Exception as e:
+        print(f"Ошибка при формировании запроса вставки в metadata: {e}")
 
 
 
@@ -137,7 +145,8 @@ def get_partition_id(sha256_hash):
 
 
 
-def client_process(CHARACTERS, MIN_LENGTH, MAX_LENGTH, BATCH_SIZE, start_index, end_index):
+def client_process(CHARACTERS, MIN_LENGTH, MAX_LENGTH, BATCH_SIZE, start_index, end_index, hwm_min):
+    format_insert_metadata_query(hwm_min)
     strings = generator(CHARACTERS, MIN_LENGTH, MAX_LENGTH, start_index, end_index)
     hash_and_write_to_cassandra(strings, BATCH_SIZE)
     requests.post(f'{SERVER_URL}/report_completion', json={'start_index': start_index, 'end_index': end_index})
@@ -167,8 +176,10 @@ def run_client():
             BATCH_SIZE = range_info.get('batch_size')
             start_index = range_info.get('start_index', 0)
             end_index = range_info.get('end_index', 0)
+            hwm_min = range_info.get('hwm_min')
+            print(f"Это из run: {hwm_min}")
 
-            client_process(CHARACTERS, MIN_LENGTH, MAX_LENGTH, BATCH_SIZE, start_index, end_index)
+            client_process(CHARACTERS, MIN_LENGTH, MAX_LENGTH, BATCH_SIZE, start_index, end_index, hwm_min)
 
 
 def report_completion(start_index, end_index):
