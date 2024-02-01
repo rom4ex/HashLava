@@ -2,9 +2,9 @@
 
 
 
-for i in {0..15}
+for i in {0..3}
 do
-  /c/Users/Den4ik/PycharmProjects/pythonProject/venv/Scripts/python.exe /c/Users/Den4ik/PycharmProjects/pythonProject/venv/gen_cli.py &
+  /c/Users/Den4ik/PycharmProjects/pythonProject/venv/Scripts/python.exe /c/Users/Den4ik/PycharmProjects/pythonProject/venv/HashLava/gen_cli.py &
 done
 
 #!/bin/bash

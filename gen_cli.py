@@ -6,7 +6,7 @@ execution_profile = ExecutionProfile(request_timeout=600)
 cluster = Cluster(['10.16.16.22'], execution_profiles={EXEC_PROFILE_DEFAULT: execution_profile})
 session = cluster.connect('hashes')
 
-SERVER_URL = 'http://10.16.16.22:5000'
+SERVER_URL = 'http://10.16.25.100:5000'
 
 
 def get_password_by_index(index, CHARACTERS, MIN_LENGTH, MAX_LENGTH):
@@ -154,7 +154,7 @@ def client_process(CHARACTERS, MIN_LENGTH, MAX_LENGTH, BATCH_SIZE, start_index, 
 
 def get_range_info():
     try:
-        response = requests.get('http://10.16.16.22:5000/get_range')
+        response = requests.get(f'{SERVER_URL}/get_range')
         return response.json()
     except Exception as e:
         print(f"Ошибка при получении информации о диапазоне: {e}")
@@ -185,7 +185,7 @@ def run_client():
 def report_completion(start_index, end_index):
     try:
         data = {'start_index': start_index, 'end_index': end_index}
-        response = requests.post('http://10.16.16.22:5000/report_completion', json=data)
+        response = requests.post(f'{SERVER_URL}/report_completion', json=data)
         if not response.json().get('status') == 'success':
             # print(f"Отчет о завершении работы с диапазоном {start_index}-{end_index} отправлен.")
             print(f"Ошибка при отправке отчета о завершении работы с диапазоном {start_index}-{end_index}.")
@@ -196,7 +196,7 @@ def report_completion(start_index, end_index):
 def signal_last_generation_completion(end_index):
     try:
         data = {'last_index': end_index}
-        response = requests.post('http://10.16.16.22:5000/check_last_record', json=data)
+        response = requests.post(f'{SERVER_URL}/check_last_record', json=data)
         if response.status_code == 200 and response.json().get('status') == 'success':
             print("Проверка последней записи успешно завершена.")
             return True
