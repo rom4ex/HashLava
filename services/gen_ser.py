@@ -8,13 +8,13 @@ from collections import deque
 from datetime import datetime
 from threading import Thread, Event
 
-
+stop_thread_event = Event()
 app = Flask(__name__)
 index_queue = deque
 completed_ranges = set()
 CHARACTERS = 'abcdefghijklmnopqrstuvwxyz'
 MIN_LENGTH = 1
-MAX_LENGTH = 4
+MAX_LENGTH = 5
 BATCH_SIZE = 2500
 MAX_RECORDS = sum(len(CHARACTERS) ** length for length in range(MIN_LENGTH, MAX_LENGTH + 1)) - 1
 RECORDS_COUNT = 100000
