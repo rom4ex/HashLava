@@ -1,11 +1,12 @@
 from flask import Flask, jsonify, request
-from time import time
+from time import time, sleep
 import hashlib
 import os
 import signal
 from cassandra.cluster import Cluster, ExecutionProfile, EXEC_PROFILE_DEFAULT
 from collections import deque
 from datetime import datetime
+from threading import Thread, Event
 
 
 app = Flask(__name__)
@@ -84,6 +85,24 @@ def check_last_record(index):
     return result.password_id == index and result.hash_text == sha256_hash if result else False
 
 
+def check_and_update():
+    while not stop_thread_event.is_set():
+        sleep(CONTROL_TIME)
+
+        in_progress_found = False
+        for task_dict in in_progress_tasks.copy():
+            if task_dict['status'] == 'in_progress':
+                in_progress_found = True
+                elapsed_time = time() - task_dict['start_time']
+                if elapsed_time > CONTROL_TIME:
+                    index_queue.appendleft(task_dict['task'])
+                    blacklist.add(task_dict['ip'])
+                    in_progress_tasks.remove(task_dict)
+
+        if not in_progress_found:
+            stop_thread_event.set()
+
+
 def analyze_task_execution(tasks):
     if not tasks:
         print("Список заданий пуст.")
@@ -121,14 +140,14 @@ def run_server():
 
 @app.route('/get_range', methods=['GET'])
 def get_range():
-    current_time = time()
-    for task_dict in in_progress_tasks.copy():
-        if task_dict['status'] == 'in_progress' or task_dict['status'] == 'error':
-            elapsed_time = current_time - task_dict['start_time']
-            if elapsed_time > CONTROL_TIME:
-                blacklist.add(task_dict['ip'])
-                index_queue.appendleft(task_dict['task'])
-                task_dict['status'] = 'error'
+    # current_time = time()
+    # for task_dict in in_progress_tasks.copy():
+    #     if task_dict['status'] == 'in_progress' or task_dict['status'] == 'error':
+    #         elapsed_time = current_time - task_dict['start_time']
+    #         if elapsed_time > CONTROL_TIME:
+    #             blacklist.add(task_dict['ip'])
+    #             index_queue.appendleft(task_dict['task'])
+    #             task_dict['status'] = 'error'
 
     hwm_min = 0
 
@@ -252,6 +271,8 @@ def main():
         index_queue = deque(maxlen=MAX_RECORDS // RECORDS_COUNT + 1)
         for i in range(0, MAX_RECORDS + 1, RECORDS_COUNT):
             index_queue.append(i)
+        update_thread = Thread(target=check_and_update)
+        update_thread.start()
         run_server()
     else:
         if count == MAX_RECORDS:
@@ -267,12 +288,16 @@ def main():
             index_queue = deque(maxlen=MAX_RECORDS // RECORDS_COUNT + 1)
             for i in range(count, MAX_RECORDS + 1, RECORDS_COUNT):
                 index_queue.append(i)
+            update_thread = Thread(target=check_and_update)
+            update_thread.start()
             run_server()
 
     end_time = time()
     result_time = end_time - start_time
     if result_time > 0.05:
         print(f"Время выполнения программы: {result_time:.3f} с")
+
+    update_thread.join()
 
 
 if __name__ == "__main__":
