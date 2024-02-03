@@ -1,6 +1,8 @@
 import requests
 import hashlib
 from cassandra.cluster import Cluster, ExecutionProfile, EXEC_PROFILE_DEFAULT
+from time import time
+import sys
 
 execution_profile = ExecutionProfile(request_timeout=600)
 cluster = Cluster(['10.16.16.22'], execution_profiles={EXEC_PROFILE_DEFAULT: execution_profile})
@@ -80,6 +82,7 @@ def generator(CHARACTERS, MIN_LENGTH, MAX_LENGTH, start_index=0, end_index=0):
 
     return generate_combinations(CHARACTERS, MIN_LENGTH, MAX_LENGTH, start_index, end_index)
 
+
 def hash_and_write_to_cassandra(strings, BATCH_SIZE):
     printed = False
     batch_index = 0
@@ -104,8 +107,6 @@ def hash_and_write_to_cassandra(strings, BATCH_SIZE):
         query = format_batch_insert_hash_query(indexes_and_hashes)
         session.execute(query, timeout=60)
 
-    # print(f"Записано {index} новых записей в базу данных.")
-
 
 def format_batch_insert_hash_query(indexes_and_hashes):
     try:
@@ -117,16 +118,6 @@ def format_batch_insert_hash_query(indexes_and_hashes):
         return query
     except Exception as e:
         print(f"Ошибка при получении информации о диапазоне: {e}")
-
-
-def format_insert_metadata_query(hwm_min):
-    try:
-        query = f"INSERT INTO metadata (id, hwm) VALUES (1, {hwm_min})"
-        session.execute(query)
-        return query
-    except Exception as e:
-        print(f"Ошибка при формировании запроса вставки в metadata: {e}")
-
 
 
 def format_insert_hash_queries(indexes_and_hashes):
@@ -144,12 +135,10 @@ def get_partition_id(sha256_hash):
     return int(sha256_hash[-4:], 16)
 
 
-
-def client_process(CHARACTERS, MIN_LENGTH, MAX_LENGTH, BATCH_SIZE, start_index, end_index, hwm_min):
-    format_insert_metadata_query(hwm_min)
+def client_process(CHARACTERS, MIN_LENGTH, MAX_LENGTH, BATCH_SIZE, start_index, end_index):
     strings = generator(CHARACTERS, MIN_LENGTH, MAX_LENGTH, start_index, end_index)
     hash_and_write_to_cassandra(strings, BATCH_SIZE)
-    requests.post(f'{SERVER_URL}/report_completion', json={'start_index': start_index, 'end_index': end_index})
+    report_completion(start_index, end_index)
 
 
 def get_range_info():
@@ -166,29 +155,34 @@ def run_client():
         range_info = get_range_info()
         if range_info.get('status') == 'finished':
             print("Генерация завершена.")
-            if signal_last_generation_completion(end_index):
-                break
-
+            signal_last_generation_completion(end_index)
+            break
+        elif range_info.get('status') == 'error':
+            print(range_info.get('message'))
+            sys.exit()
         else:
-            CHARACTERS = range_info.get('characters')
-            MIN_LENGTH = range_info.get('min_length')
-            MAX_LENGTH = range_info.get('max_length')
-            BATCH_SIZE = range_info.get('batch_size')
-            start_index = range_info.get('start_index', 0)
-            end_index = range_info.get('end_index', 0)
-            hwm_min = range_info.get('hwm_min')
-            print(f"Это из run: {hwm_min}")
+            start_index = range_info.get('start_index')
+            end_index = range_info.get('end_index')
 
-            client_process(CHARACTERS, MIN_LENGTH, MAX_LENGTH, BATCH_SIZE, start_index, end_index, hwm_min)
+            if start_index is not None and end_index is not None:
+                CHARACTERS = range_info.get('characters')
+                MIN_LENGTH = range_info.get('min_length')
+                MAX_LENGTH = range_info.get('max_length')
+                BATCH_SIZE = range_info.get('batch_size')
+
+                client_process(CHARACTERS, MIN_LENGTH, MAX_LENGTH, BATCH_SIZE, start_index, end_index)
+            else:
+                print("Некорректные данные start_index и end_index")
+                sys.exit()
 
 
 def report_completion(start_index, end_index):
     try:
-        data = {'start_index': start_index, 'end_index': end_index}
+        finish_time = time()
+        data = {'start_index': start_index, 'end_index': end_index, 'finish_time': finish_time}
         response = requests.post(f'{SERVER_URL}/report_completion', json=data)
-        if not response.json().get('status') == 'success':
-            # print(f"Отчет о завершении работы с диапазоном {start_index}-{end_index} отправлен.")
-            print(f"Ошибка при отправке отчета о завершении работы с диапазоном {start_index}-{end_index}.")
+        if response.json().get('status') == 'error':
+            print(response.json().get('message'))
     except Exception as e:
         print(f"Ошибка при отправке отчета о завершении работы: {e}")
 
