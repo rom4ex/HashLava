@@ -3,6 +3,7 @@ import hashlib
 from cassandra.cluster import Cluster, ExecutionProfile, EXEC_PROFILE_DEFAULT
 from time import time
 import sys
+import os
 
 execution_profile = ExecutionProfile(request_timeout=600)
 cluster = Cluster(['10.16.16.22'], execution_profiles={EXEC_PROFILE_DEFAULT: execution_profile})
@@ -135,6 +136,30 @@ def get_partition_id(sha256_hash):
     return int(sha256_hash[-4:], 16)
 
 
+def get_os_info():
+    os_name = os.name
+    username = None
+    pid = None
+    if os_name == 'nt':
+        username = os.getlogin()
+        pid = os.getpid()
+    else:
+        username = os.getenv('USER')
+        pid = os.getpid()
+    return username, pid
+
+
+# def info_user_pid():
+#     try:
+#         username, pid = get_os_info()
+#         data = {'username': username, 'pid': pid}
+#         response = requests.post(f'{SERVER_URL}/info_user_pid', json=data)
+#         if response.json().get('status') == 'error':
+#             print(response.json().get('message'))
+#     except Exception as e:
+#         print(f"Ошибка при отправке отчета о пользователе и pid: {e}")
+
+
 def client_process(CHARACTERS, MIN_LENGTH, MAX_LENGTH, BATCH_SIZE, start_index, end_index):
     strings = generator(CHARACTERS, MIN_LENGTH, MAX_LENGTH, start_index, end_index)
     hash_and_write_to_cassandra(strings, BATCH_SIZE)
@@ -143,7 +168,8 @@ def client_process(CHARACTERS, MIN_LENGTH, MAX_LENGTH, BATCH_SIZE, start_index, 
 
 def get_range_info():
     try:
-        response = requests.get(f'{SERVER_URL}/get_range')
+        username, pid = get_os_info()
+        response = requests.get(f'{SERVER_URL}/get_range', params={'username': username, 'pid': pid})
         return response.json()
     except Exception as e:
         print(f"Ошибка при получении информации о диапазоне: {e}")
@@ -198,6 +224,18 @@ def signal_last_generation_completion(end_index):
             print("Ошибка при проверке последней записи.")
     except Exception as e:
         print(f"Ошибка при отправке сигнала последней генерации: {e}")
+
+
+#  def shutdown():
+#     try:
+#         data = {'shutdown': 'shutdown'}
+#         response = requests.post(f'{SERVER_URL}/shutdown', json=data)
+#         if response.status_code == 200 and response.json().get('status') == 'success':
+#             print("Сервер пошел спать")
+#         else:
+#             print("Ошибка при укладывании спать")
+#     except Exception as e:
+#         print(f"Ошибка отключения: {e}")
 
 
 if __name__ == "__main__":
