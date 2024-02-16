@@ -4,12 +4,29 @@ from cassandra.cluster import Cluster, ExecutionProfile, EXEC_PROFILE_DEFAULT
 from time import time
 import sys
 import os
+import logging
 
 execution_profile = ExecutionProfile(request_timeout=600)
 cluster = Cluster(['10.16.16.22'], execution_profiles={EXEC_PROFILE_DEFAULT: execution_profile})
 session = cluster.connect('hashes')
 
 SERVER_URL = 'http://10.16.25.100:5000'
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+file_handler = logging.FileHandler('gen_cli.log')
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(formatter)
+
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)
+console_handler.setFormatter(formatter)
+
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 
 def get_password_by_index(index, CHARACTERS, MIN_LENGTH, MAX_LENGTH):
@@ -91,7 +108,7 @@ def hash_and_write_to_cassandra(strings, BATCH_SIZE):
     for string in strings:
         if not printed:
             printed = True
-            print(string)
+            logger.debug(string)
         parts = string.split(":")
         index = int(parts[0])
         password = ":".join(parts[1:])
@@ -118,7 +135,7 @@ def format_batch_insert_hash_query(indexes_and_hashes):
         APPLY BATCH;"""
         return query
     except Exception as e:
-        print(f"Ошибка при получении информации о диапазоне: {e}")
+        logger.debug(f"Ошибка при получении информации о диапазоне: {e}")
 
 
 def format_insert_hash_queries(indexes_and_hashes):
@@ -149,17 +166,6 @@ def get_os_info():
     return username, pid
 
 
-# def info_user_pid():
-#     try:
-#         username, pid = get_os_info()
-#         data = {'username': username, 'pid': pid}
-#         response = requests.post(f'{SERVER_URL}/info_user_pid', json=data)
-#         if response.json().get('status') == 'error':
-#             print(response.json().get('message'))
-#     except Exception as e:
-#         print(f"Ошибка при отправке отчета о пользователе и pid: {e}")
-
-
 def client_process(CHARACTERS, MIN_LENGTH, MAX_LENGTH, BATCH_SIZE, start_index, end_index):
     strings = generator(CHARACTERS, MIN_LENGTH, MAX_LENGTH, start_index, end_index)
     hash_and_write_to_cassandra(strings, BATCH_SIZE)
@@ -172,7 +178,7 @@ def get_range_info():
         response = requests.get(f'{SERVER_URL}/get_range', params={'username': username, 'pid': pid})
         return response.json()
     except Exception as e:
-        print(f"Ошибка при получении информации о диапазоне: {e}")
+        logger.debug(f"Ошибка при получении информации о диапазоне: {e}")
         return {'status': 'error'}
 
 
@@ -180,12 +186,15 @@ def run_client():
     while True:
         range_info = get_range_info()
         if range_info.get('status') == 'finished':
-            print("Генерация завершена.")
+            logger.debug(range_info.get('message'))
             signal_last_generation_completion(end_index)
             break
         elif range_info.get('status') == 'error':
-            print(range_info.get('message'))
+            logger.debug(range_info.get('message'))
             sys.exit()
+        elif range_info.get('status') == 'complete':
+            logger.debug(range_info.get('message'))
+            break
         else:
             start_index = range_info.get('start_index')
             end_index = range_info.get('end_index')
@@ -198,7 +207,7 @@ def run_client():
 
                 client_process(CHARACTERS, MIN_LENGTH, MAX_LENGTH, BATCH_SIZE, start_index, end_index)
             else:
-                print("Некорректные данные start_index и end_index")
+                logger.debug("Некорректные данные start_index и end_index")
                 sys.exit()
 
 
@@ -208,9 +217,9 @@ def report_completion(start_index, end_index):
         data = {'start_index': start_index, 'end_index': end_index, 'finish_time': finish_time}
         response = requests.post(f'{SERVER_URL}/report_completion', json=data)
         if response.json().get('status') == 'error':
-            print(response.json().get('message'))
+            logger.debug(response.json().get('message'))
     except Exception as e:
-        print(f"Ошибка при отправке отчета о завершении работы: {e}")
+        logger.debug(f"Ошибка при отправке отчета о завершении работы: {e}")
 
 
 def signal_last_generation_completion(end_index):
@@ -218,12 +227,12 @@ def signal_last_generation_completion(end_index):
         data = {'last_index': end_index}
         response = requests.post(f'{SERVER_URL}/check_last_record', json=data)
         if response.status_code == 200 and response.json().get('status') == 'success':
-            print("Проверка последней записи успешно завершена.")
+            logger.debug("Проверка последней записи успешно завершена.")
             return True
         else:
-            print("Ошибка при проверке последней записи.")
+            logger.debug("Ошибка при проверке последней записи.")
     except Exception as e:
-        print(f"Ошибка при отправке сигнала последней генерации: {e}")
+        logger.debug(f"Ошибка при отправке сигнала последней генерации: {e}")
 
 
 #  def shutdown():
@@ -231,11 +240,11 @@ def signal_last_generation_completion(end_index):
 #         data = {'shutdown': 'shutdown'}
 #         response = requests.post(f'{SERVER_URL}/shutdown', json=data)
 #         if response.status_code == 200 and response.json().get('status') == 'success':
-#             print("Сервер пошел спать")
+#             logger.debug("Сервер пошел спать")
 #         else:
-#             print("Ошибка при укладывании спать")
+#             logger.debug("Ошибка при укладывании спать")
 #     except Exception as e:
-#         print(f"Ошибка отключения: {e}")
+#         logger.debug(f"Ошибка отключения: {e}")
 
 
 if __name__ == "__main__":
