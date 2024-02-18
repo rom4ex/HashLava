@@ -4,7 +4,6 @@ import hashlib
 import logging
 from cassandra.cluster import Cluster, ExecutionProfile, EXEC_PROFILE_DEFAULT
 from collections import deque, defaultdict
-from datetime import datetime
 from threading import Thread, Event
 
 logger = logging.getLogger(__name__)
@@ -28,14 +27,14 @@ app = Flask(__name__)
 completed_ranges = set()
 CHARACTERS = 'abcdefghijklmnopqrstuvwxyz'
 MIN_LENGTH = 1
-MAX_LENGTH = 5
+MAX_LENGTH = 4
 BATCH_SIZE = 2500
 MAX_RECORDS = sum(len(CHARACTERS) ** length for length in range(MIN_LENGTH, MAX_LENGTH + 1)) - 1
 RECORDS_COUNT = 100000
 in_progress_tasks = []
 blacklist = defaultdict(list)
 shutdown = False
-CONTROL_TIME = RECORDS_COUNT / 10000
+CONTROL_TIME = RECORDS_COUNT / 1000
 bag_queue = deque()
 
 execution_profile = ExecutionProfile(request_timeout=600)
@@ -185,7 +184,10 @@ def get_range():
         if bag_queue:
             start_index = bag_queue.popleft()
         elif not in_progress_tasks:
-            start_index = 0
+            if get_max_index() == 0:
+                start_index = 0
+            else:
+                start_index = get_max_index() + 1
         else:
             max_start_index = max(task['task'] for task in in_progress_tasks)
             start_index = max_start_index + RECORDS_COUNT
