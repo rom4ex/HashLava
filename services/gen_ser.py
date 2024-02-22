@@ -27,14 +27,14 @@ app = Flask(__name__)
 completed_ranges = set()
 CHARACTERS = 'abcdefghijklmnopqrstuvwxyz'
 MIN_LENGTH = 1
-MAX_LENGTH = 4
+MAX_LENGTH = 6
 BATCH_SIZE = 2500
 MAX_RECORDS = sum(len(CHARACTERS) ** length for length in range(MIN_LENGTH, MAX_LENGTH + 1)) - 1
 RECORDS_COUNT = 100000
 in_progress_tasks = []
 blacklist = defaultdict(list)
 shutdown = False
-CONTROL_TIME = RECORDS_COUNT / 1000
+CONTROL_TIME = 99999999 #RECORDS_COUNT / 1000
 bag_queue = deque()
 
 execution_profile = ExecutionProfile(request_timeout=600)
@@ -148,7 +148,7 @@ def analyze_task_execution(tasks):
 
 
 def run_server():
-    app.run(host='10.16.25.100', port=5000)
+    app.run(host='10.16.16.22', port=5000)
 
 
 @app.route('/get_range', methods=['GET'])

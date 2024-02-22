@@ -5,17 +5,18 @@ from time import time
 import sys
 import os
 import logging
+import argparse
 
 execution_profile = ExecutionProfile(request_timeout=600)
 cluster = Cluster(['10.16.16.22'], execution_profiles={EXEC_PROFILE_DEFAULT: execution_profile})
 session = cluster.connect('hashes')
 
-SERVER_URL = 'http://10.16.25.100:5000'
+SERVER_URL = 'http://10.16.16.22:5000'
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter('%(asctime)s - %(clientID)-12s - %(levelname)s - %(message)s')
 
 file_handler = logging.FileHandler('gen_cli.log')
 file_handler.setLevel(logging.DEBUG)
@@ -27,7 +28,6 @@ console_handler.setFormatter(formatter)
 
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
-
 
 def get_password_by_index(index, CHARACTERS, MIN_LENGTH, MAX_LENGTH):
     password = ""
@@ -186,7 +186,7 @@ def run_client():
     while True:
         range_info = get_range_info()
         if range_info.get('status') == 'finished':
-            logger.debug(range_info.get('message'))
+            logger.debug(range_info.get('message'), )
             signal_last_generation_completion(end_index)
             break
         elif range_info.get('status') == 'error':
@@ -247,5 +247,19 @@ def signal_last_generation_completion(end_index):
 #         logger.debug(f"Ошибка отключения: {e}")
 
 
+def parse_cli_args():
+    global logger
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--clientID")
+    args = parser.parse_args()
+    if args.clientID:
+        clientID = args.clientID
+    else:
+        clientID = "UNKNOWN"
+    
+    logger = logging.LoggerAdapter(logger, {'clientID': clientID})
+
+
 if __name__ == "__main__":
+    parse_cli_args()
     run_client()
